@@ -13,7 +13,7 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-import google.generativeai as genai
+import google.genai as genai
 from PIL import Image
 
 try:
@@ -38,18 +38,14 @@ def get_rm(user_id: int, initial_balance: float = 1500.0) -> RiskManager:
 
 def create_gemini_model(
     api_key: Optional[str] = None,
-    model_name: str = "gemini-1.5-flash",
+    model_name: str = "gemini-2.0-flash",
     system_instruction: str = SHARKBOT_SYSTEM_PROMPT,
-) -> genai.GenerativeModel:
-    """Configures and returns a Google Gemini GenerativeModel instance."""
+) -> genai.Client:
+    """Configures and returns a Google Gemini client instance."""
     resolved_key = api_key or os.getenv("GEMINI_API_KEY")
     if not resolved_key:
         raise ValueError("Missing GEMINI_API_KEY environment variable or argument.")
-    genai.configure(api_key=resolved_key)
-    return genai.GenerativeModel(
-        model_name=model_name,
-        system_instruction=system_instruction
-    )
+    return genai.Client(api_key=resolved_key)
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -127,8 +123,11 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     try:
         await update.message.reply_text("Analyzing market setup...")
-        model = context.bot_data.get("gemini_model") or create_gemini_model()
-        response = model.generate_content(prompt)
+        client = context.bot_data.get("gemini_client") or create_gemini_model()
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt
+        )
         await update.message.reply_text(response.text)
     except Exception as exc:
         logger.error("Signal error: %s", exc)
@@ -193,17 +192,20 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         photo_bytes = await photo_file.download_as_bytearray()
         image = Image.open(io.BytesIO(photo_bytes))
 
-        prompt = [
-            image,
-            (
-                "Analyze this trading chart. Evaluate market structure, liquidity sweeps, and fair value gaps. "
-                f"Account: Balance ${rm.balance:,.2f}, Max daily loss remaining ${rm.daily_loss_left:,.2f}. "
-                "Produce an entry signal if an A+ setup is visible, or state NO TRADE."
-            ),
-        ]
+        prompt = (
+            "Analyze this trading chart. Evaluate market structure, liquidity sweeps, and fair value gaps. "
+            f"Account: Balance ${rm.balance:,.2f}, Max daily loss remaining ${rm.daily_loss_left:,.2f}. "
+            "Produce an entry signal if an A+ setup is visible, or state NO TRADE."
+        )
 
-        model = context.bot_data.get("gemini_model") or create_gemini_model()
-        response = model.generate_content(prompt)
+        client = context.bot_data.get("gemini_client") or create_gemini_model()
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=[
+                image,
+                prompt
+            ]
+        )
         await update.message.reply_text(response.text)
     except Exception as exc:
         logger.error("Photo handler error: %s", exc)
@@ -219,10 +221,10 @@ def build_application(
     if not token:
         raise ValueError("Missing TELEGRAM_TOKEN.")
 
-    model = create_gemini_model(gemini_key)
+    client = create_gemini_model(gemini_key)
 
     app = Application.builder().token(token).build()
-    app.bot_data["gemini_model"] = model
+    app.bot_data["gemini_client"] = client
 
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("signal", signal_command))
@@ -248,3 +250,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
