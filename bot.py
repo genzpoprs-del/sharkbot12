@@ -38,7 +38,7 @@ def get_rm(user_id: int, initial_balance: float = 1500.0) -> RiskManager:
 
 def create_gemini_model(
     api_key: Optional[str] = None,
-    model_name: str = "gemini-1.5-flash",
+    model_name: str = "gemini-3.8-flash",
     system_instruction: str = SHARKBOT_SYSTEM_PROMPT,
 ) -> genai.GenerativeModel:
     """Configures and returns a Google Gemini GenerativeModel instance."""
@@ -248,3 +248,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
